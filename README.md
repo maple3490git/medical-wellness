@@ -43,8 +43,9 @@ src/
   app/            pages Next.js (App Router)
   components/     composants UI et layout
   context/        AuthContext, ThemeContext, ToastContext
-  data/           données de démonstration
-  lib/            utilitaires, constantes, navigation
+  data/           données de démonstration (seed)
+  lib/            utilitaires, constantes, navigation, db (couche d'accès aux données)
+  services/       logique métier (patients.service, ...)
 electron/         process principal Electron + serveur local
 scripts/          scripts de build / maintenance
 android/          projet Capacitor Android

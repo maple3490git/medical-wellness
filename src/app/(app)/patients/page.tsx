@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, Users, Phone, Mail, CalendarDays, ChevronRight, Filter, UserPlus } from "lucide-react";
-import { patients } from "@/data/patients";
+import { patientsService } from "@/services/patients.service";
 import { getAppointmentsForDate } from "@/data/appointments";
 import Avatar from "@/components/ui/Avatar";
 import Badge from "@/components/ui/Badge";
@@ -30,7 +30,7 @@ export default function PatientsPage() {
   const pageSize = 10;
 
   const filtered = useMemo(() => {
-    let list = [...patients];
+    let list = [...patientsService.list()];
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -61,7 +61,7 @@ export default function PatientsPage() {
 
   return (
     <div className="space-y-5 animate-fade-in-up">
-      <PageHeader title="Patients" subtitle={`${patients.length} patients inscrits · Gestion du fichier clients`}>
+      <PageHeader title="Patients" subtitle={`${patientsService.count()} patients inscrits · Gestion du fichier clients`}>
 <button onClick={() => setOpenAdd(true)} className="btn-gold">
           <Plus size={16} /> Nouveau patient
         </button>
@@ -107,7 +107,7 @@ export default function PatientsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="card p-4">
           <p className="text-xs text-[rgb(var(--text-muted))]">Total clients</p>
-          <p className="font-display text-xl font-bold">{patients.length}</p>
+          <p className="font-display text-xl font-bold">{patientsService.count()}</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-[rgb(var(--text-muted))]">Nouveaux (30 j)</p>
@@ -119,7 +119,7 @@ export default function PatientsPage() {
         </div>
         <div className="card p-4">
           <p className="text-xs text-[rgb(var(--text-muted))]">CA généré</p>
-          <p className="font-display text-xl font-bold">{formatCurrency(patients.reduce((s, p) => s + p.totalSpent, 0))}</p>
+          <p className="font-display text-xl font-bold">{formatCurrency(patientsService.list().reduce((s, p) => s + p.totalSpent, 0))}</p>
         </div>
       </div>
 
