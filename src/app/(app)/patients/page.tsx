@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, Users, Phone, Mail, CalendarDays, ChevronRight, Filter, UserPlus } from "lucide-react";
@@ -198,71 +198,107 @@ export default function PatientsPage() {
       </div>
 
       {/* Add patient modal */}
-      <Modal open={openAdd} onClose={() => setOpenAdd(false)} title="Nouveau patient" subtitle="Les champs marqués * sont obligatoires." size="lg"
-        footer={
-          <>
-            <button onClick={() => setOpenAdd(false)} className="btn-outline">Annuler</button>
-            <button
-              onClick={() => { setOpenAdd(false); showToast("Patient créé avec succès.", "success"); }}
-              className="btn-gold"
-            >
-              <UserPlus size={15} /> Créer le patient
-            </button>
-          </>
-        }
-      >
-        <AddPatientForm />
+      <Modal open={openAdd} onClose={() => setOpenAdd(false)} title="Nouveau patient" subtitle="Les champs marqués * sont obligatoires." size="lg">
+        <AddPatientForm
+          onSuccess={() => { setOpenAdd(false); showToast("Patient créé avec succès.", "success"); }}
+          onCancel={() => setOpenAdd(false)}
+        />
       </Modal>
     </div>
   );
 }
 
-function AddPatientForm() {
+function AddPatientForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+  const [form, setForm] = useState({
+    firstName: "", lastName: "", phone: "", email: "", gender: "F" as "M" | "F",
+    birthDate: "", address: "", notes: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const setField = (key: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    const result = patientsService.create({
+      firstName: form.firstName,
+      lastName: form.lastName,
+      phone: form.phone,
+      email: form.email,
+      gender: form.gender,
+      birthDate: form.birthDate,
+      address: form.address,
+      notes: form.notes,
+    });
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.error ?? "Une erreur est survenue.");
+      return;
+    }
+    onSuccess();
+  };
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label className="input-label">Prénom *</label>
-        <input className="input" placeholder="Ex : Sara" />
-      </div>
-      <div>
-        <label className="input-label">Nom *</label>
-        <input className="input" placeholder="Ex : El Amrani" />
-      </div>
-      <div>
-        <label className="input-label">Téléphone *</label>
-        <input className="input" placeholder="+212 6xx xx xx xx" />
-      </div>
-      <div>
-        <label className="input-label">E-mail</label>
-        <input className="input" placeholder="exemple@email.com" />
-      </div>
-      <div>
-        <label className="input-label">Sexe</label>
-        <select className="input">
-          <option>Femme</option>
-          <option>Homme</option>
-        </select>
-      </div>
-      <div>
-        <label className="input-label">Date de naissance</label>
-        <input type="date" className="input" />
-      </div>
-      <div className="sm:col-span-2">
-        <label className="input-label">Adresse</label>
-        <input className="input" placeholder="Adresse à Tanger..." />
-      </div>
-      <div className="sm:col-span-2">
-        <label className="input-label">Notes médicales / allergies</label>
-        <textarea className="input min-h-[70px]" placeholder="Allergies, antécédents..." />
-      </div>
-      <div className="sm:col-span-2">
-        <label className="input-label">Tags</label>
-        <div className="flex flex-wrap gap-2">
-          {tags.slice(0, 6).map((t) => (
-            <span key={t} className="chip border border-[rgb(var(--border))]">{t} <span className="text-gold-600">+</span></span>
-          ))}
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-xl px-3.5 py-2.5">
+          {error}
+        </p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="input-label">Prénom *</label>
+          <input className="input" value={form.firstName} onChange={setField("firstName")} placeholder="Ex : Sara" required />
+        </div>
+        <div>
+          <label className="input-label">Nom *</label>
+          <input className="input" value={form.lastName} onChange={setField("lastName")} placeholder="Ex : El Amrani" required />
+        </div>
+        <div>
+          <label className="input-label">Téléphone *</label>
+          <input className="input" value={form.phone} onChange={setField("phone")} placeholder="+212 6xx xx xx xx" required />
+        </div>
+        <div>
+          <label className="input-label">E-mail *</label>
+          <input className="input" value={form.email} onChange={setField("email")} placeholder="exemple@email.com" required />
+        </div>
+        <div>
+          <label className="input-label">Sexe</label>
+          <select className="input" value={form.gender} onChange={setField("gender")}>
+            <option value="F">Femme</option>
+            <option value="M">Homme</option>
+          </select>
+        </div>
+        <div>
+          <label className="input-label">Date de naissance *</label>
+          <input type="date" className="input" value={form.birthDate} onChange={setField("birthDate")} required />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="input-label">Adresse *</label>
+          <input className="input" value={form.address} onChange={setField("address")} placeholder="Adresse à Tanger..." required />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="input-label">Notes médicales / allergies</label>
+          <textarea className="input min-h-[70px]" value={form.notes} onChange={setField("notes")} placeholder="Allergies, antécédents..." />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="input-label">Tags</label>
+          <div className="flex flex-wrap gap-2">
+            {tags.slice(0, 6).map((t) => (
+              <span key={t} className="chip border border-[rgb(var(--border))]">{t} <span className="text-gold-600">+</span></span>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" onClick={onCancel} className="btn-outline">Annuler</button>
+        <button type="submit" disabled={submitting} className="btn-gold">
+          <UserPlus size={15} /> {submitting ? "Création..." : "Créer le patient"}
+        </button>
+      </div>
+    </form>
   );
 }
