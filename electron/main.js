@@ -1,9 +1,10 @@
 "use strict";
 
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, ipcMain } = require("electron");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const db = require("./db");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -99,7 +100,19 @@ function serve(outDir, req, res) {
   }
 }
 
+function registerIpcHandlers() {
+  ipcMain.handle("db:isAvailable", async () => db.isAvailable());
+  ipcMain.handle("db:patients:list", async () => db.patients.list());
+  ipcMain.handle("db:patients:get", async (_e, id) => db.patients.get(id));
+  ipcMain.handle("db:patients:create", async (_e, data) => db.patients.create(data));
+  ipcMain.handle("db:patients:update", async (_e, id, patch) => db.patients.update(id, patch));
+  ipcMain.handle("db:patients:remove", async (_e, id) => db.patients.remove(id));
+  ipcMain.handle("db:patients:count", async () => db.patients.count());
+}
+
 function createApp() {
+  registerIpcHandlers();
+  db.init().catch(() => {});
   const outDir = resolveOutDir();
   const server = http.createServer((req, res) => serve(outDir, req, res));
 
@@ -132,6 +145,7 @@ function openWindow(port) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ChangeEvent } from "react";
+import { useMemo, useState, useEffect, type FormEvent, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, Users, Phone, Mail, CalendarDays, ChevronRight, Filter, UserPlus } from "lucide-react";
 import { patientsService } from "@/services/patients.service";
+import type { Patient } from "@/lib/types";
 import { getAppointmentsForDate } from "@/data/appointments";
 import Avatar from "@/components/ui/Avatar";
 import Badge from "@/components/ui/Badge";
@@ -29,8 +30,19 @@ export default function PatientsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
+  const [allPatients, setAllPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    patientsService.list().then((data) => {
+      if (mounted) { setAllPatients(data); setLoading(false); }
+    });
+    return () => { mounted = false; };
+  }, []);
+
   const filtered = useMemo(() => {
-    let list = [...patientsService.list()];
+    let list = [...allPatients];
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -54,14 +66,14 @@ export default function PatientsPage() {
         break;
     }
     return list;
-  }, [query, tag, status, sort]);
+  }, [allPatients, query, tag, status, sort]);
 
   const total = filtered.length;
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-5 animate-fade-in-up">
-      <PageHeader title="Patients" subtitle={`${patientsService.count()} patients inscrits · Gestion du fichier clients`}>
+      <PageHeader title="Patients" subtitle={`${allPatients.length} patients inscrits · Gestion du fichier clients`}>
 <button onClick={() => setOpenAdd(true)} className="btn-gold">
           <Plus size={16} /> Nouveau patient
         </button>
@@ -107,7 +119,7 @@ export default function PatientsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="card p-4">
           <p className="text-xs text-[rgb(var(--text-muted))]">Total clients</p>
-          <p className="font-display text-xl font-bold">{patientsService.count()}</p>
+          <p className="font-display text-xl font-bold">{allPatients.length}</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-[rgb(var(--text-muted))]">Nouveaux (30 j)</p>
@@ -119,11 +131,16 @@ export default function PatientsPage() {
         </div>
         <div className="card p-4">
           <p className="text-xs text-[rgb(var(--text-muted))]">CA généré</p>
-          <p className="font-display text-xl font-bold">{formatCurrency(patientsService.list().reduce((s, p) => s + p.totalSpent, 0))}</p>
+          <p className="font-display text-xl font-bold">{formatCurrency(allPatients.reduce((s, p) => s + p.totalSpent, 0))}</p>
         </div>
       </div>
 
       {/* Table */}
+      {loading ? (
+        <div className="card flex items-center justify-center py-16 text-[rgb(var(--text-muted))]">
+          <span className="animate-spin mr-2">⟳</span> Chargement des patients...
+        </div>
+      ) : (
       <div className="card overflow-hidden">
         {pageItems.length === 0 ? (
           <EmptyState
@@ -196,6 +213,7 @@ export default function PatientsPage() {
           </>
         )}
       </div>
+      )}
 
       {/* Add patient modal */}
       <Modal open={openAdd} onClose={() => setOpenAdd(false)} title="Nouveau patient" subtitle="Les champs marqués * sont obligatoires." size="lg">
@@ -219,11 +237,11 @@ function AddPatientForm({ onSuccess, onCancel }: { onSuccess: () => void; onCanc
   const setField = (key: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-    const result = patientsService.create({
+    const result = await patientsService.create({
       firstName: form.firstName,
       lastName: form.lastName,
       phone: form.phone,
