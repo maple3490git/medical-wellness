@@ -23,5 +23,8 @@
 | Q16 | **Multi-branch / multi-register** | Cash, Reports | Single site in MVP? If multi-site, appointments/cash/reports per site? |
 | Q17 | **Easybel migration** | Clients, Catalog | Data export from Easybel available (CSV)? ID mapping for historical payments/invoices? Cut-over date? |
 | Q18 | **Printing** | Invoices, Payments | Receipt/invoice templates (logo, layout, barcode)? Printer type (thermal A5/A4)? |
+| Q23 | **Overpayment / change procedure** | Payments, Cash | What does Reception do when actual > expected (change)? Configurable via `payment_settings`; until confirmed, flag with reason only — never auto-refund. |
+| Q24 | **TPE batch / settlement** | Payments, Reports | Is there a daily TPE batch/settlement file to import later? MVP: manual `terminalRef` only. |
+| Q25 | **Rounding tolerance** | Payments, Cash | Threshold (MAD) before a discrepancy is flagged (configurable via `payment_settings`). |
 
 > **Rule**: Until a Q is answered, the corresponding business rule is **not implemented**. The DB schema may include the field, but logic waits for the answer.

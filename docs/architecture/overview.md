@@ -82,6 +82,18 @@ apps/api/src/
 └── prisma/                  # PrismaService
 ```
 
+### Payments & Cash (Confirmed)
+
+- **Methods (MVP):** `CASH` (Espèces) · `TPE` (bank card via terminal). Reception records a payment **after** the operation/service, capturing actual amount received, method, client, sale reference, date, and authenticated employee (`recordedByUserId`).
+- **Anchor:** every payment must reference a **sale** (`saleId` required); `appointmentId` is optional operational metadata. Standalone operations are modeled as sales.
+- **Ledger:** `payments` is an **append-only ledger** (immutable rows). Effective status is **derived** from a separate `payment_voids` record (original payment ID, reason, authorized employee, timestamp). Refunds are **separate transactions** linked to the original payment; the **method is inherited** from the original payment.
+- **Split payments:** multiple `payments` rows per `sale` are supported (CASH + TPE). Totals are counted once per payment (single ledger, no double-counting via appointment references).
+- **Theoretical vs actual:** `sales.expectedTotal` (frozen at confirmation) vs `actualTotal` (derived = Σ active payments). Overpayments are **flagged with reason only** — configurable via `payment_settings` until Q23 is confirmed; never auto-refunded.
+- **Cash vs TPE separation:** `CASH` payments require exactly one valid `OPEN` cash session and generate `INCOME` movements; `TPE` payments are manual (no terminal integration, optional `terminalRef`) and **never affect the physical drawer**. Reports and the daily closing separate CASH/TPE (TPE excluded from the drawer equation).
+- **Cash session integrity:** one `OPEN` session per register (partial unique index). Closed sessions are immutable; compensating movements (refunds/voids) land in the currently open session of the same register (blocked if none is open).
+- **Sign conventions:** `expected_balance = opening_balance + Σ(balance_effect)`; `REVERSAL` stores the **negative** amount (`INCOME +100` + `REVERSAL −100` = `0` net).
+- **Concurrency:** refund creation locks the original `payments` row (`SELECT ... FOR UPDATE`), rejects voided payments, and inserts refund + cash movement atomically; voiding a payment with existing refunds is rejected until refunds are formally reconciled (no silent erasure).
+
 ### Cross-Cutting Concerns
 
 | Concern | Implementation |
@@ -104,6 +116,7 @@ apps/api/src/
 - Multi-service appointments — junction table `appointment_services` with price snapshot.
 - Modification history — `AuditLog` + `updatedAt`/`updatedBy` on mutable entities.
 - Client fields — all Easybel fields modeled in `clients` table (see DB design).
+- Payment workflow — CASH/TPE ledger with split payments, append-only refunds (inherited method), derived void status, cash-session integrity, and method-separated reporting (see `docs/database/design.md` §2.5 and `docs/requirements/payments.md`).
 
 ## 7. Integrations
 

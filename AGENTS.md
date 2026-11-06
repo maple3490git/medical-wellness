@@ -132,6 +132,22 @@ medical-wellness/
 
 ---
 
+## 8a. Payment Workflow (Confirmed)
+
+- **Payment methods (MVP)**: `CASH` (Espèces) · `TPE` (bank card via terminal) — no other methods.
+- **Timing**: Reception records the payment **after** the operation/service is completed.
+- **Reception captures**: amount actually received, method, related client, related sale/operation, date/time, authenticated employee (`recordedByUserId`).
+- **One sale → multiple payment records** supported (split CASH + TPE allowed; not assumed common). Every payment must reference a **sale** (`saleId` required); `appointmentId` is optional operational metadata only.
+- **Theoretical vs actual amounts stay separate**: `expectedTotal` (frozen at sale confirmation) vs `actualTotal` (derived = Σ active payments). Balance = expected − actual.
+- **CASH and TPE are separated** in financial reports and daily closing. **TPE never affects the physical cash drawer.**
+- **TPE is manual**: processed on the physical terminal; no integration in MVP. Optional `terminalRef` (auth code) entered by Reception.
+- **Refunds**: partial or full, via **separate refund transactions** linked to the original payment. **Method is inherited** from the original payment (no independent selection). Never overwrite or delete the original payment.
+- **Voids**: append-only. The original `payments` row stays **immutable**; effective status is **derived** from a separate `payment_voids` record (original payment ID, reason, authorized employee, timestamp). No silent changes or deletion of financial records.
+- **Cash register**: one `OPEN` session per register at a time. Every CASH payment is bound to exactly one valid open session. TPE requires no session. Closed sessions are **never modified** (compensating movements land in the currently open session).
+- **Single accounting source**: all totals come from the `payments` ledger (via `payment_effective`); appointment references never double-count.
+
+---
+
 ## 9. Engineering Rules
 
 - **TypeScript strict mode** everywhere.

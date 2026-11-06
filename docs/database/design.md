@@ -91,31 +91,85 @@ Indexes: `(startsAt, status)`, `(clientId)`, `(assignedEmployeeId, startsAt)`.
 
 ### 2.5 Sales, Payments, Cash
 
+**Accounting anchor**: every payment references a **sale**. `appointment_id` is optional operational metadata only (see `sale_appointment_links`). Standalone operations are modeled as sales. The `payments` ledger (via `payment_effective`) is the **single authoritative source** for all financial totals — appointment references never double-count.
+
 **sales** (a sale can contain several services/products)
 - `id`, `clientId FK?`, `createdByUserId FK NOT NULL`
 - `status enum`: `DRAFT | CONFIRMED | CANCELLED`
+- `expectedTotal numeric(12,2) NOT NULL` (frozen at confirmation — the theoretical amount)
 - `subtotal`, `tax`, `discount`, `total numeric(12,2)`
+- Derived (computed, never stored): `actualTotal = Σ(payments.amount WHERE status='RECORDED')`, `balance = expectedTotal − actualTotal`, `isSettled = (balance = 0)`
 - `createdAt`, `updatedAt`
 
 **sale_items**
 - `saleId FK`, `serviceId FK?`, `description text`, `quantity int`
-- `unitPrice numeric(12,2)`, `lineTotal numeric(12,2)`
+- `unitPrice numeric(12,2)` (snapshot), `lineTotal numeric(12,2)`
 
-**payments**
-- `id`, `saleId FK?`, `appointmentId FK?`
-- `method enum`: `CASH | CARD | BANK_TRANSFER | OTHER`
-- `amount numeric(12,2) NOT NULL`, `paidAt timestamptz`, `reference text?`
-- `status enum`: `RECORDED | VOIDED | REFUNDED`
-- Append-only history — never update amount on a recorded payment; use void/refund rows.
+**sale_appointment_links** (junction — **no 1:1 assumption** between sales and appointments)
+- `saleId FK`, `appointmentId FK`, `linkType enum`: `PERFORMS | BILLED_FROM`
+
+**payments** (append-only ledger — **immutable** rows, no `status` column)
+- `id UUID PK`
+- `saleId FK NOT NULL` (every payment belongs to a sale)
+- `appointmentId FK?` (operational metadata only)
+- `clientId FK NOT NULL` (must equal the parent `sale.clientId`)
+- `method enum`: `CASH | TPE`
+- `amount numeric(12,2) NOT NULL CHECK (amount > 0)` (actual amount received)
+- `receivedAt timestamptz NOT NULL`, `recordedByUserId FK → users NOT NULL`
+- `sessionId FK?` — **required for CASH, NULL for TPE** (`CHECK` constraint)
+- `terminalRef text?` (manual TPE auth code — entered by Reception; no terminal integration)
+- `createdAt timestamptz DEFAULT now()`
+- **Derived:** `effective_status` via `payment_effective` view (see below)
+
+**payment_effective** (view — single accounting source)
+```sql
+CREATE VIEW payment_effective AS
+SELECT p.*,
+       CASE WHEN v.id IS NULL THEN 'RECORDED' ELSE 'VOIDED' END AS effective_status
+FROM payments p
+LEFT JOIN payment_voids v ON v.original_payment_id = p.id;
+```
+
+**payment_voids** (append-only void records)
+- `id UUID PK`, `originalPaymentId FK → payments NOT NULL`
+- `reason text NOT NULL`, `authorizedByUserId FK NOT NULL` (must hold void permission)
+- `voidedAt timestamptz DEFAULT now()`, `reversalMovementId FK?`
+
+**payment_refunds** (separate transactions — never overwrite the original payment)
+- `id UUID PK`, `paymentId FK → payments NOT NULL`
+- `type enum`: `FULL | PARTIAL`, `amount numeric(12,2) NOT NULL`
+- `reason text NOT NULL`, `recordedByUserId FK NOT NULL`, `createdAt timestamptz`
+- `cashMovementId FK?` (CASH only — links the refund to its `WITHDRAWAL` movement)
+- **Method is inherited** from the original payment (no independent method selection).
+- **Guard:** within one transaction — `SELECT ... FOR UPDATE` on the base `payments` row (not the view), reject if `payment_voids` exists, compute `refundable = amount − Σ(refunds)`, insert refund (+ cash movement if CASH) atomically. Voiding a payment with existing refunds is **rejected** until refunds are formally reconciled (reversing entries + manager sign-off).
 
 **cash_registers**
 - `id`, `name UNIQUE` (e.g. `CAISSE-01`), `isActive`
 
-**cash_movements** (immutable ledger)
-- `id`, `registerId FK`, `type enum`: `OPEN | CLOSE | INCOME | EXPENSE | TRANSFER`
+**cash_sessions**
+- `id`, `registerId FK`, `openedByUserId FK`, `openingBalance numeric(12,2) NOT NULL`
+- `status enum`: `OPEN | CLOSED` (default `OPEN`)
+- `closedByUserId FK?`, `closedAt timestamptz?`, `expectedBalance numeric(12,2)?`, `countedBalance numeric(12,2)?`, `discrepancy numeric(12,2)?`
+- **Integrity:** partial unique index on `(registerId) WHERE status = 'OPEN'` — one open session per register. Closed sessions are **never modified** (compensating movements land in the currently open session; if none is open, the refund/void is blocked).
+
+**cash_movements** (immutable ledger — **CASH only**; TPE never creates a movement)
+- `id`, `registerId FK`, `sessionId FK NOT NULL`, `type enum`: `INCOME | EXPENSE | WITHDRAWAL | REVERSAL | ADJUSTMENT`
+- `paymentId FK?`, `refundId FK?`, `reversalOfMovementId FK?`
 - `amount numeric(12,2)`, `balanceSnapshot numeric(12,2)?`
-- `referenceType?` / `referenceId?` (sale/payment/invoice), `notes?`
-- `recordedById FK → users`, `occurredAt timestamptz`, `createdAt`
+- `notes?`, `recordedByUserId FK`, `occurredAt timestamptz`, `createdAt`
+- **Sign conventions** (`expected_balance = opening_balance + Σ(balance_effect)`):
+
+| `type` | Stored `amount` | `balance_effect` |
+|---|---|---|
+| `INCOME` (CASH payment) | positive | `+ amount` |
+| `EXPENSE` | positive | `− amount` |
+| `WITHDRAWAL` (incl. refund-linked) | positive | `− amount` |
+| `REVERSAL` (of a voided CASH payment) | **negative** | **the stored amount** (e.g. `−100` → `−100`) |
+| `ADJUSTMENT` | **signed** | `+ stored amount` |
+
+**payment_settings** (configurable until Q23 confirmed)
+- `overpaymentPolicy enum`: `FLAG_ONLY | REQUIRE_REASON | ALLOW_CHANGE_AS_CASH_OUT`
+- `roundingTolerance numeric(10,2)` (Q25), `updatedByUserId FK`, `updatedAt`
 
 ### 2.6 Packages & Subscriptions
 
